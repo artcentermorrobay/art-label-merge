@@ -337,11 +337,9 @@
     line-height: 1.2;
     color: #1a1a1a;
     margin-bottom: 1px;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
   }
 
   .card-medium-price {
@@ -817,20 +815,32 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
   const _measureCanvas = document.createElement('canvas');
   const _measureCtx = _measureCanvas.getContext('2d');
 
-  function measureTextWidth(text, fontSizePt) {
-    _measureCtx.font = `bold ${fontSizePt}pt Arial, Helvetica, sans-serif`;
+  function measureTextWidth(text, fontSizePt, bold) {
+    _measureCtx.font = `${bold ? 'bold ' : ''}${fontSizePt}pt Arial, Helvetica, sans-serif`;
     return _measureCtx.measureText(text).width;
   }
 
-  function computeNameFontSize(text, maxWidthPx) {
-    const BASE_SIZE = 18;
-    const MIN_SIZE = 10;
-    let size = BASE_SIZE;
+  function computeFitFontSize(text, maxWidthPx, basePt, minPt, bold) {
+    let size = basePt;
     const safeMax = maxWidthPx * 0.95;
-    while (measureTextWidth(text, size) > safeMax && size > MIN_SIZE) {
+    while (measureTextWidth(text, size, bold) > safeMax && size > minPt) {
       size -= 0.5;
     }
     return size;
+  }
+
+  function computeNameFontSize(text, maxWidthPx) {
+    return computeFitFontSize(text, maxWidthPx, 18, 10, true);
+  }
+
+  function computeTitleFontSize(text, maxWidthPx) {
+    return computeFitFontSize(text, maxWidthPx, 14, 8, false);
+  }
+
+  function computeMediumFontSize(mediumText, priceText, maxWidthPx) {
+    // Medium shares the line with price, so reduce available width
+    const priceW = priceText ? measureTextWidth(priceText, 14, false) + 12 : 0;
+    return computeFitFontSize(mediumText, maxWidthPx - priceW, 14, 8, false);
   }
 
   function getNameMaxWidthPx() {
@@ -878,15 +888,25 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
         if (dataIdx < filledRows.length) {
           const d = filledRows[dataIdx];
           const nameText = formatName(resolveName(d));
+          const titleText = formatTitle(d.title);
+          const mediumText = formatMedium(d.medium);
+          const priceText = formatPrice(d.price);
+
           const nameFontSize = computeNameFontSize(nameText, maxWidthPx);
+          const titleFontSize = computeTitleFontSize(titleText, maxWidthPx);
+          const mediumFontSize = computeMediumFontSize(mediumText, priceText, maxWidthPx);
+
           const nameStyle = nameFontSize < 18 ? ` style="font-size:${nameFontSize}pt"` : '';
+          const titleStyle = titleFontSize < 14 ? ` style="font-size:${titleFontSize}pt"` : '';
+          const mediumStyle = mediumFontSize < 14 ? ` style="font-size:${mediumFontSize}pt"` : '';
+
           card.innerHTML = `
             <div class="card-inner">
               <div class="card-name"${nameStyle}>${escapeHtml(nameText)}</div>
-              <div class="card-title">${escapeHtml(formatTitle(d.title))}</div>
+              <div class="card-title"${titleStyle}>${escapeHtml(titleText)}</div>
               <div class="card-medium-price">
-                <span class="card-medium">${escapeHtml(formatMedium(d.medium))}</span>
-                <span class="card-price">${escapeHtml(formatPrice(d.price))}</span>
+                <span class="card-medium"${mediumStyle}>${escapeHtml(mediumText)}</span>
+                <span class="card-price">${escapeHtml(priceText)}</span>
               </div>
               <div class="card-spacer"></div>
               <div class="card-number">${escapeHtml(formatNumber(d.number))}</div>
@@ -982,8 +1002,10 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
         const priceText = formatPrice(d.price);
         const numberText = formatNumber(d.number);
 
-        // Compute name font size
+        // Compute font sizes — shrink to fit, no wrapping
         const nameFontPt = computeNameFontSize(nameText, maxWidthPx);
+        const titleFontPt = computeTitleFontSize(titleText, maxWidthPx);
+        const mediumFontPt = computeMediumFontSize(mediumText, priceText, maxWidthPx);
 
         const contentX = cardX + PAD_LEFT;
         const contentRight = cardX + CARD_W - PAD_RIGHT;
@@ -995,28 +1017,25 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
         doc.setFontSize(nameFontPt);
         doc.setTextColor(26, 26, 26);
         cursorY += nameFontPt * 0.85;
-        doc.text(nameText, contentX, cursorY, { maxWidth: contentW });
+        doc.text(nameText, contentX, cursorY);
         cursorY += 4;
 
-        // Title — regular 14pt
+        // Title — regular, auto-sized, single line
         doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(14);
-        cursorY += 14 * 0.85;
-        // Handle long titles: split into lines
-        const titleLines = doc.splitTextToSize(titleText, contentW);
-        const maxTitleLines = 2;
-        const shownTitle = titleLines.slice(0, maxTitleLines);
-        doc.text(shownTitle, contentX, cursorY);
-        cursorY += (shownTitle.length - 1) * 14 * 1.15 + 3;
+        doc.setFontSize(titleFontPt);
+        cursorY += titleFontPt * 0.85;
+        doc.text(titleText, contentX, cursorY);
+        cursorY += 3;
 
-        // Medium (left) + Price (right) — 14pt
+        // Medium (left) + Price (right)
         doc.setFont('Helvetica', 'normal');
-        doc.setFontSize(14);
-        cursorY += 14 * 0.85;
+        cursorY += mediumFontPt * 0.85;
         if (mediumText) {
-          doc.text(mediumText, contentX, cursorY, { maxWidth: contentW - 60 });
+          doc.setFontSize(mediumFontPt);
+          doc.text(mediumText, contentX, cursorY);
         }
         if (priceText) {
+          doc.setFontSize(14);
           doc.text(priceText, contentRight, cursorY, { align: 'right' });
         }
 
