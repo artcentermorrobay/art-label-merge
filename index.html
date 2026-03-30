@@ -374,7 +374,7 @@
   .card-number {
     font-size: 6pt;
     font-weight: 400;
-    color: #aaaaaa;
+    color: #888888;
     line-height: 1;
     position: absolute;
     bottom: 0.15in;
@@ -565,7 +565,7 @@
         </div>
         <div style="display:flex; gap:10px;" class="no-print">
           <button class="btn btn-primary" onclick="generatePreview()">Refresh Preview</button>
-          <button class="btn btn-success" onclick="printCards()">Print / Export PDF</button>
+          <button class="btn btn-success" onclick="exportPDF()">Export PDF</button>
         </div>
       </div>
       <div class="preview-container empty-state" id="preview-area">
@@ -654,6 +654,8 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
 
 <!-- SheetJS for Excel import -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- jsPDF for print-ready PDF export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <!-- ========== JAVASCRIPT ========== -->
 <script>
@@ -921,12 +923,117 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
     });
   }
 
-  // ====== PRINT ======
-  window.printCards = function() {
-    if (!document.querySelector('.avery-sheet')) {
-      generatePreview();
+  // ====== PDF EXPORT ======
+  window.exportPDF = function() {
+    syncInputsToStore();
+
+    const filledRows = rows.filter(r => resolveName(r).trim() || r.title.trim() || r.price.trim());
+    if (filledRows.length === 0) {
+      alert('No data to export. Enter at least one row.');
+      return;
     }
-    window.print();
+
+    // Also generate the on-screen preview
+    generatePreview();
+
+    setStatus('Generating PDF...');
+
+    // Avery 8871 dimensions in points (72pt = 1in)
+    const PAGE_W = 8.5 * 72;   // 612
+    const PAGE_H = 11 * 72;    // 792
+    const MARGIN_TOP = settings.marginTop * 72;
+    const MARGIN_LEFT = settings.marginLeft * 72;
+    const CARD_W = settings.cardWidth * 72;  // 252
+    const CARD_H = settings.cardHeight * 72; // 144
+    const COLS = 2;
+    const ROWS_PER = 5;
+    const CARDS_PER = 10;
+    const PAD_LEFT = 0.22 * 72;
+    const PAD_TOP = 0.18 * 72;
+    const PAD_BOTTOM = 0.15 * 72;
+    const PAD_RIGHT = 0.22 * 72;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'letter',
+    });
+
+    const maxWidthPx = getNameMaxWidthPx();
+    const totalSheets = Math.ceil(filledRows.length / CARDS_PER);
+
+    for (let s = 0; s < totalSheets; s++) {
+      if (s > 0) doc.addPage('letter', 'portrait');
+
+      for (let i = 0; i < CARDS_PER; i++) {
+        const dataIdx = s * CARDS_PER + i;
+        if (dataIdx >= filledRows.length) break; // skip blank cards
+
+        const col = i % COLS;
+        const row = Math.floor(i / COLS);
+        const cardX = MARGIN_LEFT + col * CARD_W;
+        const cardY = MARGIN_TOP + row * CARD_H;
+
+        const d = filledRows[dataIdx];
+        const nameText = formatName(resolveName(d));
+        const titleText = formatTitle(d.title);
+        const mediumText = formatMedium(d.medium);
+        const priceText = formatPrice(d.price);
+        const numberText = formatNumber(d.number);
+
+        // Compute name font size
+        const nameFontPt = computeNameFontSize(nameText, maxWidthPx);
+
+        const contentX = cardX + PAD_LEFT;
+        const contentRight = cardX + CARD_W - PAD_RIGHT;
+        const contentW = contentRight - contentX;
+        let cursorY = cardY + PAD_TOP;
+
+        // Name — bold, auto-sized
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(nameFontPt);
+        doc.setTextColor(26, 26, 26);
+        cursorY += nameFontPt * 0.85;
+        doc.text(nameText, contentX, cursorY, { maxWidth: contentW });
+        cursorY += 4;
+
+        // Title — regular 14pt
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(14);
+        cursorY += 14 * 0.85;
+        // Handle long titles: split into lines
+        const titleLines = doc.splitTextToSize(titleText, contentW);
+        const maxTitleLines = 2;
+        const shownTitle = titleLines.slice(0, maxTitleLines);
+        doc.text(shownTitle, contentX, cursorY);
+        cursorY += (shownTitle.length - 1) * 14 * 1.15 + 3;
+
+        // Medium (left) + Price (right) — 14pt
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(14);
+        cursorY += 14 * 0.85;
+        if (mediumText) {
+          doc.text(mediumText, contentX, cursorY, { maxWidth: contentW - 60 });
+        }
+        if (priceText) {
+          doc.text(priceText, contentRight, cursorY, { align: 'right' });
+        }
+
+        // Number — 6pt light gray, bottom-left
+        if (numberText) {
+          doc.setFont('Helvetica', 'normal');
+          doc.setFontSize(6);
+          doc.setTextColor(136, 136, 136);
+          const numY = cardY + CARD_H - PAD_BOTTOM;
+          doc.text(numberText, contentX, numY);
+        }
+      }
+    }
+
+    doc.save('art-labels.pdf');
+    setStatus(`PDF exported: ${filledRows.length} cards on ${totalSheets} sheet(s)`);
+    showToast('PDF saved — ready to print');
   };
 
   // ====== SAMPLE DATA ======
@@ -1192,7 +1299,7 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
   document.addEventListener('keydown', function(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
       e.preventDefault();
-      printCards();
+      exportPDF();
     }
     if (e.key === 'Escape') {
       closePasteModal();
