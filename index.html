@@ -347,6 +347,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
+    margin-top: 4px;
   }
   .card-medium {
     font-size: 14pt;
@@ -1025,7 +1026,7 @@ Connie&#9;Avila&#9;&#9;Morning Gossip&#9;Oil&#9;425&#9;116"></textarea>
         doc.setFontSize(titleFontPt);
         cursorY += titleFontPt * 0.85;
         doc.text(titleText, contentX, cursorY);
-        cursorY += 3;
+        cursorY += 8;
 
         // Medium (left) + Price (right)
         doc.setFont('Helvetica', 'normal');
